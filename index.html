@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Gate Control</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #1a1a2e; color: white; padding: 20px; }
+        .container { max-width: 400px; margin: auto; background: #16213e; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h1 { font-size: 24px; color: #4db8ff; margin-bottom: 20px; }
+        #status { font-size: 14px; margin-bottom: 20px; color: #ff4d4d; }
+        
+        button { width: 100%; padding: 15px; margin: 10px 0; font-size: 16px; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; transition: 0.2s; }
+        button:active { transform: scale(0.98); }
+        
+        .btn-connect { background: #4db8ff; color: #1a1a2e; }
+        .btn-open { background: #2ecc71; color: white; display: none; }
+        .btn-activate { background: #f39c12; color: white; display: none; }
+        .btn-lock { background: #e74c3c; color: white; display: none; }
+        
+        .footer { font-size: 12px; margin-top: 20px; opacity: 0.6; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>GATE CONTROL</h1>
+    <div id="status">STATUS: DISCONNECTED</div>
+
+    <button class="btn-connect" id="connectBtn" onclick="connectBluetooth()">1. PAIR WITH GATE</button>
+    
+    <button class="btn-activate" id="activateBtn" onclick="send('A')">ACTIVATE SENSOR</button>
+    <button class="btn-lock" id="lockBtn" onclick="send('L')">LOCK SENSOR</button>
+    <button class="btn-open" id="openBtn" onclick="send('O')">OPEN GATE NOW</button>
+
+    <div class="footer">Web Bluetooth Control System v1.0</div>
+</div>
+
+<script>
+    let deviceCache = null;
+    let characteristicCache = null;
+
+    // These are the standard UUIDs for the HM-10 module
+    const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
+    const CHARACTERISTIC_UUID = '0000ffe1-0000-1000-8000-00805f9b34fb';
+
+    async function connectBluetooth() {
+        try {
+            document.getElementById('status').innerText = "STATUS: SEARCHING...";
+            
+            const device = await navigator.bluetooth.requestDevice({
+                filters: [{ services: [SERVICE_UUID] }],
+                optionalServices: [SERVICE_UUID]
+            });
+
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService(SERVICE_UUID);
+            characteristicCache = await service.getCharacteristic(CHARACTERISTIC_UUID);
+            
+            deviceCache = device;
+            onConnected();
+        } catch (error) {
+            console.error(error);
+            document.getElementById('status').innerText = "STATUS: CONNECTION FAILED";
+        }
+    }
+
+    function onConnected() {
+        document.getElementById('status').innerText = "STATUS: CONNECTED TO GATE";
+        document.getElementById('status').style.color = "#2ecc71";
+        document.getElementById('connectBtn').style.display = "none";
+        
+        // Show control buttons
+        document.getElementById('activateBtn').style.display = "block";
+        document.getElementById('lockBtn').style.display = "block";
+        document.getElementById('openBtn').style.display = "block";
+    }
+
+    async function send(data) {
+        if (!characteristicCache) return;
+        const encoder = new TextEncoder();
+        await characteristicCache.writeValue(encoder.encode(data));
+        console.log("Sent command: " + data);
+    }
+</script>
+
+</body>
+</html>
