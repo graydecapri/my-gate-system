@@ -1,44 +1,41 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Smart Gate v2.0</title>
+    <title>Gate Control v2</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { font-family: 'Segoe UI', sans-serif; text-align: center; background: #0f172a; color: white; padding: 20px; }
-        .card { max-width: 400px; margin: auto; background: #1e293b; padding: 25px; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }
+        .card { max-width: 400px; margin: auto; background: #1e293b; padding: 25px; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
         
-        /* The Status Badge */
         #gateStatus { 
-            font-size: 24px; font-weight: 800; padding: 15px; margin: 20px 0;
-            border-radius: 12px; background: #334155; transition: 0.5s;
+            font-size: 22px; font-weight: bold; padding: 20px; margin: 20px 0;
+            border-radius: 15px; background: #334155; transition: 0.4s;
         }
-        .status-open { background: #10b981 !important; color: white; box-shadow: 0 0 20px #10b981; }
-        .status-closed { background: #ef4444 !important; color: white; }
-        .status-moving { background: #f59e0b !important; color: white; animation: blink 1s infinite; }
+        .status-open { background: #10b981 !important; box-shadow: 0 0 15px #10b981; }
+        .status-closed { background: #ef4444 !important; }
+        .status-moving { background: #f59e0b !important; animation: pulse 1s infinite; }
 
-        @keyframes blink { 50% { opacity: 0.6; } }
+        @keyframes pulse { 50% { opacity: 0.7; } }
 
         button { width: 100%; padding: 16px; margin: 8px 0; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 16px; transition: 0.2s; }
         .btn-blue { background: #3b82f6; color: white; }
-        .btn-green { background: #10b981; color: white; }
-        .btn-red { background: #64748b; color: white; }
+        .btn-action { background: #475569; color: white; }
         
-        #sensorTag { font-size: 12px; color: #94a3b8; margin-bottom: 10px; }
+        #sensorStatus { font-size: 13px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h2>GATE CONTROL</h2>
-    <div id="sensorTag">SENSOR: DISCONNECTED</div>
-    <div id="gateStatus">READY TO PAIR</div>
+    <div id="sensorStatus">System Offline</div>
+    <div id="gateStatus">NOT CONNECTED</div>
 
-    <button class="btn-blue" id="connBtn" onclick="connectBT()">CONNECT VIA BLUETOOTH</button>
+    <button class="btn-blue" id="connBtn" onclick="connectBT()">CONNECT GATE</button>
     
     <div id="controls" style="display:none;">
-        <button class="btn-green" onclick="send('O')">OPEN GATE NOW</button>
-        <button class="btn-blue" onclick="send('A')">ACTIVATE SENSOR</button>
-        <button class="btn-red" onclick="send('L')">LOCK SENSOR</button>
+        <button class="btn-blue" style="background:#10b981" onclick="send('O')">FORCE OPEN</button>
+        <button class="btn-action" onclick="send('A')">ENABLE SENSOR (5CM)</button>
+        <button class="btn-action" onclick="send('L')">LOCK SENSOR</button>
     </div>
 </div>
 
@@ -56,38 +53,37 @@
             const service = await server.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
             char = await service.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
             
-            // Listen for data back from Arduino
             await char.startNotifications();
-            char.addEventListener('characteristicvaluechanged', (event) => {
-                let msg = decoder.decode(event.target.value).trim();
-                updateUI(msg);
+            char.addEventListener('characteristicvaluechanged', (e) => {
+                let msg = decoder.decode(e.target.value).trim();
+                handleFeedback(msg);
             });
 
             document.getElementById('connBtn').style.display = 'none';
             document.getElementById('controls').style.display = 'block';
-            updateUI("STATUS:CLOSED");
-        } catch (e) { console.log(e); }
+            handleFeedback("STATUS:CLOSED");
+        } catch (e) { console.log("Conn Error:", e); }
     }
 
-    function updateUI(msg) {
-        let statusDiv = document.getElementById('gateStatus');
-        let sensorDiv = document.getElementById('sensorTag');
+    function handleFeedback(msg) {
+        let s = document.getElementById('gateStatus');
+        let t = document.getElementById('sensorStatus');
 
         if (msg.includes("OPENING") || msg.includes("CLOSING")) {
-            statusDiv.innerText = "MOVING...";
-            statusDiv.className = "status-moving";
+            s.innerText = "GATE MOVING...";
+            s.className = "status-moving";
         } else if (msg.includes("OPEN")) {
-            statusDiv.innerText = "GATE OPEN";
-            statusDiv.className = "status-open";
+            s.innerText = "GATE IS OPEN";
+            s.className = "status-open";
         } else if (msg.includes("CLOSED")) {
-            statusDiv.innerText = "GATE CLOSED";
-            statusDiv.className = "status-closed";
+            s.innerText = "GATE IS CLOSED";
+            s.className = "status-closed";
         } else if (msg.includes("SENSOR:ON")) {
-            sensorDiv.innerText = "SENSOR: ACTIVE";
-            sensorDiv.style.color = "#10b981";
+            t.innerText = "Sensor Active (5cm Range)";
+            t.style.color = "#10b981";
         } else if (msg.includes("SENSOR:OFF")) {
-            sensorDiv.innerText = "SENSOR: LOCKED";
-            sensorDiv.style.color = "#ef4444";
+            t.innerText = "Sensor Locked/Off";
+            t.style.color = "#ef4444";
         }
     }
 
