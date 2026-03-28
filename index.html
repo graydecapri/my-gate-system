@@ -1,88 +1,99 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Gate Control</title>
+    <title>Smart Gate v2.0</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #1a1a2e; color: white; padding: 20px; }
-        .container { max-width: 400px; margin: auto; background: #16213e; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        h1 { font-size: 24px; color: #4db8ff; margin-bottom: 20px; }
-        #status { font-size: 14px; margin-bottom: 20px; color: #ff4d4d; }
+        body { font-family: 'Segoe UI', sans-serif; text-align: center; background: #0f172a; color: white; padding: 20px; }
+        .card { max-width: 400px; margin: auto; background: #1e293b; padding: 25px; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }
         
-        button { width: 100%; padding: 15px; margin: 10px 0; font-size: 16px; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; transition: 0.2s; }
-        button:active { transform: scale(0.98); }
+        /* The Status Badge */
+        #gateStatus { 
+            font-size: 24px; font-weight: 800; padding: 15px; margin: 20px 0;
+            border-radius: 12px; background: #334155; transition: 0.5s;
+        }
+        .status-open { background: #10b981 !important; color: white; box-shadow: 0 0 20px #10b981; }
+        .status-closed { background: #ef4444 !important; color: white; }
+        .status-moving { background: #f59e0b !important; color: white; animation: blink 1s infinite; }
+
+        @keyframes blink { 50% { opacity: 0.6; } }
+
+        button { width: 100%; padding: 16px; margin: 8px 0; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 16px; transition: 0.2s; }
+        .btn-blue { background: #3b82f6; color: white; }
+        .btn-green { background: #10b981; color: white; }
+        .btn-red { background: #64748b; color: white; }
         
-        .btn-connect { background: #4db8ff; color: #1a1a2e; }
-        .btn-open { background: #2ecc71; color: white; display: none; }
-        .btn-activate { background: #f39c12; color: white; display: none; }
-        .btn-lock { background: #e74c3c; color: white; display: none; }
-        
-        .footer { font-size: 12px; margin-top: 20px; opacity: 0.6; }
+        #sensorTag { font-size: 12px; color: #94a3b8; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>GATE CONTROL</h1>
-    <div id="status">STATUS: DISCONNECTED</div>
+<div class="card">
+    <h2>GATE CONTROL</h2>
+    <div id="sensorTag">SENSOR: DISCONNECTED</div>
+    <div id="gateStatus">READY TO PAIR</div>
 
-    <button class="btn-connect" id="connectBtn" onclick="connectBluetooth()">1. PAIR WITH GATE</button>
+    <button class="btn-blue" id="connBtn" onclick="connectBT()">CONNECT VIA BLUETOOTH</button>
     
-    <button class="btn-activate" id="activateBtn" onclick="send('A')">ACTIVATE SENSOR</button>
-    <button class="btn-lock" id="lockBtn" onclick="send('L')">LOCK SENSOR</button>
-    <button class="btn-open" id="openBtn" onclick="send('O')">OPEN GATE NOW</button>
-
-    <div class="footer">Web Bluetooth Control System v1.0</div>
+    <div id="controls" style="display:none;">
+        <button class="btn-green" onclick="send('O')">OPEN GATE NOW</button>
+        <button class="btn-blue" onclick="send('A')">ACTIVATE SENSOR</button>
+        <button class="btn-red" onclick="send('L')">LOCK SENSOR</button>
+    </div>
 </div>
 
 <script>
-    let deviceCache = null;
-    let characteristicCache = null;
+    let char;
+    const decoder = new TextDecoder();
 
-    // These are the standard UUIDs for the HM-10 module
-    const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
-    const CHARACTERISTIC_UUID = '0000ffe1-0000-1000-8000-00805f9b34fb';
-
-    async function connectBluetooth() {
+    async function connectBT() {
         try {
-            document.getElementById('status').innerText = "STATUS: SEARCHING...";
-            
             const device = await navigator.bluetooth.requestDevice({
-                filters: [{ services: [SERVICE_UUID] }],
-                optionalServices: [SERVICE_UUID]
+                filters: [{ services: ['0000ffe0-0000-1000-8000-00805f9b34fb'] }],
+                optionalServices: ['0000ffe0-0000-1000-8000-00805f9b34fb']
+            });
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
+            char = await service.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
+            
+            // Listen for data back from Arduino
+            await char.startNotifications();
+            char.addEventListener('characteristicvaluechanged', (event) => {
+                let msg = decoder.decode(event.target.value).trim();
+                updateUI(msg);
             });
 
-            const server = await device.gatt.connect();
-            const service = await server.getPrimaryService(SERVICE_UUID);
-            characteristicCache = await service.getCharacteristic(CHARACTERISTIC_UUID);
-            
-            deviceCache = device;
-            onConnected();
-        } catch (error) {
-            console.error(error);
-            document.getElementById('status').innerText = "STATUS: CONNECTION FAILED";
+            document.getElementById('connBtn').style.display = 'none';
+            document.getElementById('controls').style.display = 'block';
+            updateUI("STATUS:CLOSED");
+        } catch (e) { console.log(e); }
+    }
+
+    function updateUI(msg) {
+        let statusDiv = document.getElementById('gateStatus');
+        let sensorDiv = document.getElementById('sensorTag');
+
+        if (msg.includes("OPENING") || msg.includes("CLOSING")) {
+            statusDiv.innerText = "MOVING...";
+            statusDiv.className = "status-moving";
+        } else if (msg.includes("OPEN")) {
+            statusDiv.innerText = "GATE OPEN";
+            statusDiv.className = "status-open";
+        } else if (msg.includes("CLOSED")) {
+            statusDiv.innerText = "GATE CLOSED";
+            statusDiv.className = "status-closed";
+        } else if (msg.includes("SENSOR:ON")) {
+            sensorDiv.innerText = "SENSOR: ACTIVE";
+            sensorDiv.style.color = "#10b981";
+        } else if (msg.includes("SENSOR:OFF")) {
+            sensorDiv.innerText = "SENSOR: LOCKED";
+            sensorDiv.style.color = "#ef4444";
         }
     }
 
-    function onConnected() {
-        document.getElementById('status').innerText = "STATUS: CONNECTED TO GATE";
-        document.getElementById('status').style.color = "#2ecc71";
-        document.getElementById('connectBtn').style.display = "none";
-        
-        // Show control buttons
-        document.getElementById('activateBtn').style.display = "block";
-        document.getElementById('lockBtn').style.display = "block";
-        document.getElementById('openBtn').style.display = "block";
-    }
-
-    async function send(data) {
-        if (!characteristicCache) return;
-        const encoder = new TextEncoder();
-        await characteristicCache.writeValue(encoder.encode(data));
-        console.log("Sent command: " + data);
+    async function send(c) {
+        if (char) await char.writeValue(new TextEncoder().encode(c));
     }
 </script>
-
 </body>
 </html>
