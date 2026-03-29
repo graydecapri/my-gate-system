@@ -1,94 +1,110 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Gate Control v2</title>
+    <meta charset="UTF-8">
+    <title>Gate Control System</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { font-family: 'Segoe UI', sans-serif; text-align: center; background: #0f172a; color: white; padding: 20px; }
-        .card { max-width: 400px; margin: auto; background: #1e293b; padding: 25px; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        .card { max-width: 400px; margin: 20px auto; background: #1e293b; padding: 30px; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid #334155; }
         
-        #gateStatus { 
-            font-size: 22px; font-weight: bold; padding: 20px; margin: 20px 0;
+        .status-box { 
+            font-size: 20px; font-weight: bold; padding: 20px; margin: 20px 0;
             border-radius: 15px; background: #334155; transition: 0.4s;
+            border: 2px solid #475569;
         }
-        .status-open { background: #10b981 !important; box-shadow: 0 0 15px #10b981; }
-        .status-closed { background: #ef4444 !important; }
-        .status-moving { background: #f59e0b !important; animation: pulse 1s infinite; }
+        .status-open { background: #10b981 !important; border-color: #059669; box-shadow: 0 0 15px rgba(16, 185, 129, 0.3); }
+        .status-closed { background: #ef4444 !important; border-color: #dc2626; }
+        .status-moving { background: #f59e0b !important; border-color: #d97706; animation: pulse 1s infinite; }
 
         @keyframes pulse { 50% { opacity: 0.7; } }
 
-        button { width: 100%; padding: 16px; margin: 8px 0; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 16px; transition: 0.2s; }
-        .btn-blue { background: #3b82f6; color: white; }
-        .btn-action { background: #475569; color: white; }
+        button { width: 100%; padding: 18px; margin: 10px 0; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 16px; transition: 0.2s; }
+        button:active { transform: scale(0.96); }
         
-        #sensorStatus { font-size: 13px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+        .btn-connect { background: #3b82f6; color: white; }
+        .btn-open { background: #10b981; color: white; }
+        .btn-toggle { background: #475569; color: white; border: 1px solid #64748b; }
+        
+        .label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <div id="sensorStatus">System Offline</div>
-    <div id="gateStatus">NOT CONNECTED</div>
-
-    <button class="btn-blue" id="connBtn" onclick="connectBT()">CONNECT GATE</button>
+    <h2 style="margin-bottom: 25px;">Parking Control</h2>
+    
+    <button class="btn-connect" id="connBtn" onclick="connectBT()">CONNECT TO GATE</button>
     
     <div id="controls" style="display:none;">
-        <button class="btn-blue" style="background:#10b981" onclick="send('O')">FORCE OPEN</button>
-        <button class="btn-action" onclick="send('A')">ENABLE SENSOR (5CM)</button>
-        <button class="btn-action" onclick="send('L')">LOCK SENSOR</button>
+        <div class="label">Current Gate Status</div>
+        <div id="gateStatus" class="status-box">DISCONNECTED</div>
+        
+        <button class="btn-open" onclick="send('O')">OPEN GATE NOW</button>
+        <button class="btn-toggle" id="sensBtn" onclick="send('A')">AUTO-SENSOR: OFF</button>
     </div>
 </div>
 
 <script>
     let char;
     const decoder = new TextDecoder();
+    const SERVICE_UUID = 0xFFE0; // Standard HM-10 Service
+    const CHAR_UUID = 0xFFE1;    // Standard HM-10 Characteristic
 
     async function connectBT() {
         try {
             const device = await navigator.bluetooth.requestDevice({
-                filters: [{ services: ['0000ffe0-0000-1000-8000-00805f9b34fb'] }],
-                optionalServices: ['0000ffe0-0000-1000-8000-00805f9b34fb']
+                filters: [{ services: [SERVICE_UUID] }],
+                optionalServices: [SERVICE_UUID]
             });
+            
             const server = await device.gatt.connect();
-            const service = await server.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
-            char = await service.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
+            const service = await server.getPrimaryService(SERVICE_UUID);
+            char = await service.getCharacteristic(CHAR_UUID);
             
             await char.startNotifications();
             char.addEventListener('characteristicvaluechanged', (e) => {
                 let msg = decoder.decode(e.target.value).trim();
-                handleFeedback(msg);
+                updateUI(msg);
             });
 
             document.getElementById('connBtn').style.display = 'none';
             document.getElementById('controls').style.display = 'block';
-            handleFeedback("STATUS:CLOSED");
-        } catch (e) { console.log("Conn Error:", e); }
-    }
-
-    function handleFeedback(msg) {
-        let s = document.getElementById('gateStatus');
-        let t = document.getElementById('sensorStatus');
-
-        if (msg.includes("OPENING") || msg.includes("CLOSING")) {
-            s.innerText = "GATE MOVING...";
-            s.className = "status-moving";
-        } else if (msg.includes("OPEN")) {
-            s.innerText = "GATE IS OPEN";
-            s.className = "status-open";
-        } else if (msg.includes("CLOSED")) {
-            s.innerText = "GATE IS CLOSED";
-            s.className = "status-closed";
-        } else if (msg.includes("SENSOR:ON")) {
-            t.innerText = "Sensor Active (5cm Range)";
-            t.style.color = "#10b981";
-        } else if (msg.includes("SENSOR:OFF")) {
-            t.innerText = "Sensor Locked/Off";
-            t.style.color = "#ef4444";
+            updateUI("G:CLOSED");
+        } catch (e) {
+            alert("Bluetooth connection failed. Is the module powered on?");
         }
     }
 
-    async function send(c) {
-        if (char) await char.writeValue(new TextEncoder().encode(c));
+    function updateUI(msg) {
+        const status = document.getElementById('gateStatus');
+        const sBtn = document.getElementById('sensBtn');
+
+        if (msg.includes("G:MOVING")) {
+            status.innerText = "GATE MOVING...";
+            status.className = "status-box status-moving";
+        } else if (msg.includes("G:OPEN")) {
+            status.innerText = "GATE OPEN";
+            status.className = "status-box status-open";
+        } else if (msg.includes("G:CLOSED")) {
+            status.innerText = "GATE CLOSED";
+            status.className = "status-box status-closed";
+        }
+
+        if (msg.includes("GS:ON")) {
+            sBtn.innerText = "AUTO-SENSOR: ACTIVE";
+            sBtn.style.background = "#059669";
+        } else if (msg.includes("GS:OFF")) {
+            sBtn.innerText = "AUTO-SENSOR: OFF";
+            sBtn.style.background = "#475569";
+        }
+    }
+
+    async function send(data) {
+        if (!char) return;
+        try {
+            await char.writeValue(new TextEncoder().encode(data));
+        } catch (e) { console.log("Send Error:", e); }
     }
 </script>
 </body>
