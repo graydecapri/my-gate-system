@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Gate Control System</title>
+    <title>Smart Home Gate System</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { font-family: 'Segoe UI', sans-serif; text-align: center; background: #0f172a; color: white; padding: 20px; }
@@ -32,24 +32,25 @@
 <body>
 
 <div class="card">
-    <h2 style="margin-bottom: 25px;">Parking Control</h2>
+    <h2 style="margin-bottom: 25px;">Smart Home Gate</h2>
     
     <button class="btn-connect" id="connBtn" onclick="connectBT()">CONNECT TO GATE</button>
     
     <div id="controls" style="display:none;">
-        <div class="label">Current Gate Status</div>
-        <div id="gateStatus" class="status-box">DISCONNECTED</div>
+        <div class="label">Gate Status</div>
+        <div id="gateStatus" class="status-box">INITIALIZING...</div>
         
         <button class="btn-open" onclick="send('O')">OPEN GATE NOW</button>
-        <button class="btn-toggle" id="sensBtn" onclick="send('A')">AUTO-SENSOR: OFF</button>
+        <button class="btn-toggle" id="sensBtn" onclick="toggleSensor()">AUTO-SENSOR: ACTIVE</button>
     </div>
 </div>
 
 <script>
     let char;
+    let sensorIsActive = true; 
     const decoder = new TextDecoder();
-    const SERVICE_UUID = 0xFFE0; // Standard HM-10 Service
-    const CHAR_UUID = 0xFFE1;    // Standard HM-10 Characteristic
+    const SERVICE_UUID = 0xFFE0; 
+    const CHAR_UUID = 0xFFE1;    
 
     async function connectBT() {
         try {
@@ -70,9 +71,12 @@
 
             document.getElementById('connBtn').style.display = 'none';
             document.getElementById('controls').style.display = 'block';
-            updateUI("G:CLOSED");
+            
+            // Sync UI with the Arduino's startup defaults
+            updateUI("STATUS:CLOSED");
+            updateUI("SENSOR:ON");
         } catch (e) {
-            alert("Bluetooth connection failed. Is the module powered on?");
+            alert("Bluetooth connection failed. Make sure the Smart Gate is powered on.");
         }
     }
 
@@ -80,23 +84,33 @@
         const status = document.getElementById('gateStatus');
         const sBtn = document.getElementById('sensBtn');
 
-        if (msg.includes("G:MOVING")) {
+        if (msg.includes("STATUS:OPENING") || msg.includes("STATUS:CLOSING")) {
             status.innerText = "GATE MOVING...";
             status.className = "status-box status-moving";
-        } else if (msg.includes("G:OPEN")) {
+        } else if (msg.includes("STATUS:OPEN")) {
             status.innerText = "GATE OPEN";
             status.className = "status-box status-open";
-        } else if (msg.includes("G:CLOSED")) {
+        } else if (msg.includes("STATUS:CLOSED")) {
             status.innerText = "GATE CLOSED";
             status.className = "status-box status-closed";
         }
 
-        if (msg.includes("GS:ON")) {
+        if (msg.includes("SENSOR:ON")) {
+            sensorIsActive = true;
             sBtn.innerText = "AUTO-SENSOR: ACTIVE";
             sBtn.style.background = "#059669";
-        } else if (msg.includes("GS:OFF")) {
+        } else if (msg.includes("SENSOR:OFF")) {
+            sensorIsActive = false;
             sBtn.innerText = "AUTO-SENSOR: OFF";
             sBtn.style.background = "#475569";
+        }
+    }
+
+    function toggleSensor() {
+        if (sensorIsActive) {
+            send('L');
+        } else {
+            send('A');
         }
     }
 
@@ -104,7 +118,7 @@
         if (!char) return;
         try {
             await char.writeValue(new TextEncoder().encode(data));
-        } catch (e) { console.log("Send Error:", e); }
+        } catch (e) { console.log("Bluetooth Send Error:", e); }
     }
 </script>
 </body>
